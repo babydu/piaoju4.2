@@ -19,7 +19,7 @@ Updated: 2026-04-02
 | 层级 | 技术选型 |
 |------|---------|
 | 前端框架 | Flutter 3.x |
-| 本地数据库 | Isar 3.x |
+| 本地数据库 | Hive 2.x（支持加密） |
 | 图片处理 | OpenCV Flutter |
 | OCR引擎 | Google ML Kit Text Recognition v2 |
 | 状态管理 | Provider |
@@ -27,6 +27,19 @@ Updated: 2026-04-02
 | 云端存储 | S3兼容对象存储 |
 | BFF服务 | Node.js + Express |
 | 环境变量 | 1Panel静态网站 |
+
+### 1.3 数据库选型理由
+
+| 特性 | Hive | Isar |
+|------|------|------|
+| 维护状态 | 活跃维护中 | 已停止维护 |
+| Flutter 3兼容 | 良好 | 存在兼容性问题 |
+| 加密支持 | 内置支持 | 需额外配置 |
+| 体积 | <500KB | <1MB |
+| 依赖 | 无原生依赖 | 无原生依赖 |
+| 适用场景 | Key-Value存储、简单对象 | 复杂关系查询 |
+
+**结论**：选择Hive作为本地数据库，满足票据存储需求且技术可持续。
 
 ## 2. 系统架构
 
@@ -51,7 +64,7 @@ graph TB
     end
 
     subgraph 数据层
-        IsarDB["Isar数据库"]
+        HiveDB["Hive数据库"]
         S3Adapter["S3同步适配层"]
         FileStorage["文件存储"]
     end
@@ -69,7 +82,7 @@ graph TB
     UI --> ImageProc
     UI --> OCR
     
-    Storage --> IsarDB
+    Storage --> HiveDB
     Storage --> FileStorage
     Storage --> S3Adapter
     Crypto --> FileStorage
@@ -91,7 +104,7 @@ sequenceDiagram
     
     App->>Core: 1. 初始化UI框架
     App->>Core: 2. 初始化Provider
-    App->>Core: 3. 初始化Isar数据库
+    App->>Core: 3. 初始化Hive数据库
     App->>Core: 4. 初始化加密模块
     App->>Core: 5. 显示首页
     Core->>Ext: 6. 扩展模块懒加载
@@ -103,12 +116,12 @@ sequenceDiagram
 graph LR
     subgraph 应用沙盒
         subgraph 普通存储
-            NormalDB["普通票据数据库"]
-            NormalFiles["普通票据图片"]
+            NormalDB["普通票据数据\nHive明文存储"]
+            NormalFiles["普通票据图片\nWebP明文"]
         end
         
         subgraph 隐私存储
-            PrivateDB["隐私票据数据库\nIsar加密实例"]
+            PrivateDB["隐私票据数据\nHive加密存储"]
             PrivateFiles["隐私票据图片\nAES加密WebP"]
         end
         
@@ -131,7 +144,7 @@ lib/
 │   ├── ticket.dart              # 票据模型
 │   ├── collection.dart          # 合集模型
 │   ├── user_account.dart        # 用户账号模型
-│   └── sync_status.dart         # 同步状态模型
+│   └── sync_status.dart         # 同步状态枚举
 ├── providers/                   # 状态管理
 │   ├── ticket_provider.dart
 │   ├── collection_provider.dart
@@ -139,12 +152,12 @@ lib/
 │   ├── sync_provider.dart
 │   └── settings_provider.dart
 ├── services/                    # 服务层
-│   ├── database_service.dart    # Isar数据库服务
+│   ├── database_service.dart    # Hive数据库服务
 │   ├── storage_service.dart     # 文件存储服务
-│   ├── crypto_service.dart     # 加密服务
+│   ├── crypto_service.dart      # 加密服务
 │   ├── ocr_service.dart        # OCR服务
-│   ├── sync_service.dart       # 同步服务
-│   └── backup_service.dart     # 备份恢复服务
+│   ├── sync_service.dart        # 同步服务
+│   └── backup_service.dart      # 备份恢复服务
 ├── repositories/                # 数据仓库
 │   ├── ticket_repository.dart
 │   └── collection_repository.dart
@@ -172,42 +185,54 @@ lib/
 ### 4.1 票据模型 (Ticket)
 
 ```dart
-@collection
-class Ticket {
-  Id id = Isar.autoIncrement;
+@HiveType(typeId: 0)
+class Ticket extends HiveObject {
+  @HiveField(0)
+  String id;                      // UUID
   
-  @Index()
-  String title;                  // 标题
+  @HiveField(1)
+  String title;                   // 标题
   
-  String? ocrText;               // OCR识别文本
+  @HiveField(2)
+  String? ocrText;                // OCR识别文本
   
+  @HiveField(3)
   String? description;           // AI整理的简介
   
+  @HiveField(4)
   List<String> tags;             // 标签列表
   
-  int? collectionId;             // 合集ID
+  @HiveField(5)
+  String? collectionId;          // 合集ID
   
+  @HiveField(6)
   String? location;              // 位置信息
   
-  @Index()
+  @HiveField(7)
   DateTime createTime;           // 创建时间
   
+  @HiveField(8)
   DateTime updateTime;           // 修改时间
   
+  @HiveField(9)
   DateTime? dueDate;             // 到期日期
   
-  @Index()
-  bool isPrivate;                // 是否为隐私票据
+  @HiveField(10)
+  bool isPrivate;                 // 是否为隐私票据
   
-  String? imagePath;             // 图片路径
+  @HiveField(11)
+  String? imagePath;              // 图片路径
   
+  @HiveField(12)
   String? thumbnailPath;          // 缩略图路径
   
-  @enumerated
-  SyncStatus syncStatus;         // 同步状态
+  @HiveField(13)
+  SyncStatus syncStatus;          // 同步状态
   
+  @HiveField(14)
   int version;                   // 版本号
   
+  @HiveField(15)
   int syncTimestamp;             // 同步时间戳
 }
 ```
@@ -215,60 +240,132 @@ class Ticket {
 ### 4.2 合集模型 (Collection)
 
 ```dart
-@collection
-class Collection {
-  Id id = Isar.autoIncrement;
+@HiveType(typeId: 1)
+class Collection extends HiveObject {
+  @HiveField(0)
+  String id;                      // UUID
   
-  @Index(unique: true)
-  String name;                   // 合集名称
+  @HiveField(1)
+  String name;                    // 合集名称
   
-  String? coverPath;             // 封面图片路径
+  @HiveField(2)
+  String? coverPath;              // 封面图片路径
   
-  @Index()
+  @HiveField(3)
   DateTime createTime;
   
+  @HiveField(4)
   DateTime updateTime;
   
+  @HiveField(5)
   bool isDefault;                // 是否为默认合集
+  
+  @HiveField(6)
+  bool isDeleted;                // 软删除标记
 }
 ```
 
 ### 4.3 用户账号模型 (UserAccount)
 
 ```dart
-@collection
-class UserAccount {
-  Id id = Isar.autoIncrement;
+@HiveType(typeId: 2)
+class UserAccount extends HiveObject {
+  @HiveField(0)
+  String id;                      // UUID
   
-  String? phoneNumber;            // 手机号
+  @HiveField(1)
+  String? phoneNumber;           // 手机号
+  
+  @HiveField(2)
   String? email;                  // 邮箱
-  String passwordHash;            // 密码哈希
   
-  @enumerated
+  @HiveField(3)
+  String passwordHash;           // 密码哈希
+  
+  @HiveField(4)
   AccountStatus status;          // 账号状态
   
+  @HiveField(5)
   DateTime createTime;
+  
+  @HiveField(6)
   DateTime lastLoginTime;
   
-  List<DeviceInfo> devices;      // 登录设备列表
+  @HiveField(7)
+  List<DeviceInfo> devices;       // 登录设备列表
+  
+  @HiveField(8)
+  MemberType memberType;          // 会员类型
+  
+  @HiveField(9)
+  DateTime? memberExpireTime;    // 会员过期时间
 }
 
-@embedded
+@HiveType(typeId: 3)
 class DeviceInfo {
+  @HiveField(0)
   String deviceId;
+  
+  @HiveField(1)
   String deviceName;
+  
+  @HiveField(2)
   DateTime lastActiveTime;
 }
 ```
 
-### 4.4 同步状态枚举
+### 4.4 枚举定义
 
 ```dart
+@HiveType(typeId: 10)
 enum SyncStatus {
+  @HiveField(0)
   notSynced,     // 未同步
+  
+  @HiveField(1)
   syncing,       // 同步中
+  
+  @HiveField(2)
   synced,        // 已同步
+  
+  @HiveField(3)
   failed         // 同步失败
+}
+
+@HiveType(typeId: 11)
+enum AccountStatus {
+  @HiveField(0)
+  active,        // 正常
+  
+  @HiveField(1)
+  frozen,        // 冻结
+  
+  @HiveField(2)
+  deleted       // 已注销
+}
+
+@HiveType(typeId: 12)
+enum MemberType {
+  @HiveField(0)
+  free,          // 免费用户
+  
+  @HiveField(1)
+  monthly,       // 月度会员
+  
+  @HiveField(2)
+  yearly         // 年度会员
+}
+
+@HiveType(typeId: 13)
+enum DeleteCollectionOption {
+  @HiveField(0)
+  moveToUncategorized,  // 移至未分类
+  
+  @HiveField(1)
+  deleteTickets,        // 删除票据
+  
+  @HiveField(2)
+  keepTickets           // 仅删除合集
 }
 ```
 
@@ -311,32 +408,32 @@ class CryptoService {
 
 ```dart
 class DatabaseService {
-  // 初始化普通票据数据库
-  Future<void> initNormalDatabase();
+  // 初始化数据库
+  Future<void> init();
   
-  // 初始化隐私票据数据库
-  Future<void> initPrivateDatabase(String password);
+  // 初始化加密盒（用于隐私票据）
+  Future<void> initEncryptedBox(String password);
   
   // 关闭数据库连接
   Future<void> close();
   
   // 票据CRUD操作
-  Future<int> insertTicket(Ticket ticket);
-  Future<Ticket?> getTicket(int id);
+  Future<String> insertTicket(Ticket ticket);
+  Future<Ticket?> getTicket(String id);
   Future<List<Ticket>> getAllTickets({int offset, int limit});
   Future<List<Ticket>> searchTickets(String query, {bool includePrivate});
   Future<void> updateTicket(Ticket ticket);
-  Future<void> deleteTicket(int id);
+  Future<void> deleteTicket(String id);
   
   // 合集CRUD操作
-  Future<int> insertCollection(Collection collection);
+  Future<String> insertCollection(Collection collection);
   Future<List<Collection>> getAllCollections();
   Future<void> updateCollection(Collection collection);
-  Future<void> deleteCollection(int id, DeleteOption option);
+  Future<void> deleteCollection(String id, DeleteCollectionOption option);
   
   // 备份与恢复
-  Future<String> exportDatabase();
-  Future<void> importDatabase(String path);
+  Future<String> exportDatabase(String password);
+  Future<void> importDatabase(String path, String password);
 }
 ```
 
@@ -374,7 +471,7 @@ class SyncService {
   Future<void> uploadTicket(Ticket ticket, String imagePath);
   
   // 下载票据
-  Future<Ticket> downloadTicket(int ticketId);
+  Future<Ticket> downloadTicket(String ticketId);
   
   // 处理冲突
   Future<ConflictResolution> resolveConflict(
@@ -423,6 +520,7 @@ graph LR
 | 密钥类型 | 存储位置 | 访问控制 |
 |---------|---------|---------|
 | 隐私票据加密密钥 | Android KeyStore / iOS Keychain | 生物识别或密码验证后访问 |
+| Hive加密密钥 | Android KeyStore / iOS Keychain | 隐私箱密码派生 |
 | 备份文件密钥 | 用户自定义密码派生 | 仅用户知晓 |
 | API密钥 | 1Panel静态网站 | APP加密请求获取 |
 
@@ -452,6 +550,16 @@ graph TD
 | 认证标签长度 | 128位 |
 | 密钥派生 | PBKDF2 |
 
+### 7.4 Hive加密配置
+
+```dart
+// Hive加密盒配置
+final encryptedBox = await Hive.openBox<Ticket>(
+  'private_tickets',
+  encryptionCipher: HiveAesCipher(encryptionKey),
+);
+```
+
 ## 8. 错误处理
 
 ### 8.1 错误分类
@@ -464,6 +572,7 @@ graph TD
 | 加密失败 | 终止操作 | 「安全验证失败，请重启APP」 |
 | 同步冲突 | 弹窗选择 | 显示冲突详情供用户选择 |
 | 备份文件损坏 | 拒绝恢复 | 「备份文件已损坏，无法恢复」 |
+| 密码错误 | 限制次数 | 「密码错误，剩余N次尝试机会」 |
 
 ### 8.2 异常状态流
 
@@ -516,14 +625,14 @@ graph TD
 // 请求
 class UnlockPrivateRequest {
   String type;          // "password" | "biometric"
-  String? password;      // 密码验证时必填
+  String? password;     // 密码验证时必填
 }
 
 // 响应
 class UnlockPrivateResponse {
   bool success;
   String? errorMessage;
-  int expiresAt;        // 过期时间戳
+  int expiresAt;       // 过期时间戳
 }
 ```
 
@@ -531,7 +640,7 @@ class UnlockPrivateResponse {
 
 ```dart
 class ConflictResolutionRequest {
-  int ticketId;
+  String ticketId;
   String resolution;     // "keepLocal" | "keepRemote" | "keepBoth"
 }
 
@@ -546,14 +655,14 @@ class ConflictResolutionResponse {
 
 ```dart
 class BackupRequest {
-  String password;      // 用户设置的备份密码
+  String password;       // 用户设置的备份密码
 }
 
 // 响应
 class BackupResponse {
-  String filePath;       // 备份文件路径
+  String filePath;      // 备份文件路径
   int ticketCount;       // 包含的票据数量
-  int fileSize;          // 文件大小
+  int fileSize;         // 文件大小
 }
 ```
 
@@ -582,7 +691,7 @@ class BackupResponse {
    - 验证锁屏后自动锁定
 
 4. **数据迁移测试**
-   - 验证S3适配层正确性
+   - 验证Hive数据导出导入正确性
    - 验证备份恢复完整性
 
 ### 11.3 测试数据准备
@@ -598,7 +707,7 @@ class BackupResponse {
 
 | 阶段 | 时间 | 交付物 |
 |------|------|--------|
-| 第一阶段 | 3周 | Flutter项目、核心页面、本地存储、相机/相册 |
+| 第一阶段 | 3周 | Flutter项目、核心页面、Hive本地存储、相机/相册 |
 | 第二阶段 | 2周 | OCR识别、筛选搜索、批量操作、导出功能 |
 | 第三阶段 | 2周 | 隐私票据、加密存储、备份恢复 |
 | 第四阶段 | 2周 | 云端同步、BFF服务、环境变量服务 |
@@ -608,6 +717,6 @@ class BackupResponse {
 ## 13. 参考资料
 
 [^1]: (Flutter官方文档) - [Flutter Docs](https://flutter.dev/docs)
-[^2]: (Isar数据库) - [Isar Database](https://isar.tech/)
+[^2]: (Hive数据库) - [Hive for Flutter](https://docs.hivedb.dev/)
 [^3]: (Google ML Kit) - [ML Kit Text Recognition](https://developers.google.com/ml-kit/vision/text-recognition)
 [^4]: (AES加密标准) - [NIST AES](https://csrc.nist.gov/projects/aes)
