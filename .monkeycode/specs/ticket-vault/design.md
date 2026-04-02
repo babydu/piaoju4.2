@@ -120,7 +120,7 @@ graph LR
             NormalFiles["普通票据图片\nWebP明文"]
         end
         
-        subgraph 隐私存储
+        subgraph 隐私票据存储
             PrivateDB["隐私票据数据\nHive加密存储"]
             PrivateFiles["隐私票据图片\nAES加密WebP"]
         end
@@ -520,7 +520,7 @@ graph LR
 | 密钥类型 | 存储位置 | 访问控制 |
 |---------|---------|---------|
 | 隐私票据加密密钥 | Android KeyStore / iOS Keychain | 生物识别或密码验证后访问 |
-| Hive加密密钥 | Android KeyStore / iOS Keychain | 隐私箱密码派生 |
+| Hive加密密钥 | Android KeyStore / iOS Keychain | 隐私票据密码派生 |
 | 备份文件密钥 | 用户自定义密码派生 | 仅用户知晓 |
 | API密钥 | 1Panel静态网站 | APP加密请求获取 |
 
